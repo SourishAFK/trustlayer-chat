@@ -62,18 +62,6 @@ SYSTEM_PROMPT = (
 )
 
 
-def make_clients(api_keys):
-    clients = [genai.Client(api_key=k) for k in api_keys if k]
-    if not clients:
-        raise ValueError("No GEMINI_API_KEY set.")
-    return clients
-
-
-@st.cache_resource
-def get_clients():
-    return make_clients(GEMINI_KEYS)
-
-
 def _to_contents(messages):
     contents = []
     for m in messages:
@@ -89,14 +77,18 @@ def _to_contents(messages):
     return contents
 
 
-def generate_reply(clients, messages, model="gemini-2.5-flash-lite", temperature=0.7):
-    """Generate the reply, trying each key in turn so one 503/429 doesn't kill it."""
+def generate_reply(api_keys, messages, model="gemini-2.5-flash-lite", temperature=0.7):
+    """Generate the reply, trying each key in turn. A FRESH client is created per
+    attempt and held in a local var — never a throwaway temporary or a stale
+    cached one, both of which can hit google-genai's 'client has been closed'.
+    """
     contents = _to_contents(messages)
     config = types.GenerateContentConfig(
         system_instruction=SYSTEM_PROMPT, temperature=temperature)
     last_exc = None
-    for client in clients:
+    for key in api_keys:
         try:
+            client = genai.Client(api_key=key)
             response = client.models.generate_content(
                 model=model, contents=contents, config=config)
             text = (response.text or "").strip()
@@ -464,7 +456,7 @@ if st.session_state.pending:
     placeholder = st.empty()
     placeholder.markdown(spinner_html("thinking…"), unsafe_allow_html=True)
     try:
-        reply = generate_reply(get_clients(), st.session_state.messages, model=CHAT_MODEL)
+        reply = generate_reply(GEMINI_KEYS, st.session_state.messages, model=CHAT_MODEL)
     except Exception as exc:
         reply = "Sorry — I couldn't generate a reply just now. Please try again."
         st.session_state["_last_error"] = str(exc)
