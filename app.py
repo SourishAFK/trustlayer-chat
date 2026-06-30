@@ -16,12 +16,20 @@ import re
 import streamlit as st
 from dotenv import load_dotenv
 
-from chat_engine import generate_reply, make_client
+from chat_engine import generate_reply, make_clients
 
 load_dotenv()
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_KEYS = [os.getenv("GEMINI_API_KEY")] + [
+    os.getenv(f"GEMINI_API_KEY_{i}") for i in range(2, 10)
+]
+GEMINI_KEYS = [k for k in GEMINI_KEYS if k]
 CHAT_MODEL = os.getenv("GEMINI_CHAT_MODEL", "gemini-2.5-flash-lite")
+
+
+@st.cache_resource
+def get_clients():
+    return make_clients(GEMINI_KEYS)
 
 st.set_page_config(
     page_title="TrustLayer Chat",
@@ -235,8 +243,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-if not GEMINI_API_KEY:
-    st.error("Set GEMINI_API_KEY in your .env (a separate Gemini key for this app).")
+if not GEMINI_KEYS:
+    st.error("Set GEMINI_API_KEY in your .env (or Streamlit secrets) for this app.")
     st.stop()
 
 
@@ -265,8 +273,7 @@ if st.session_state.pending:
     placeholder = st.empty()
     placeholder.markdown(TYPING_HTML, unsafe_allow_html=True)
     try:
-        client = make_client(GEMINI_API_KEY)
-        reply = generate_reply(client, st.session_state.messages, model=CHAT_MODEL)
+        reply = generate_reply(get_clients(), st.session_state.messages, model=CHAT_MODEL)
     except Exception as exc:  # never hard-crash the chat
         reply = "Sorry — I couldn't generate a reply just now. Please try again."
         st.session_state["_last_error"] = str(exc)

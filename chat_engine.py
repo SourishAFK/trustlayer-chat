@@ -21,11 +21,16 @@ SYSTEM_PROMPT = (
 )
 
 
-def make_client(api_key: str) -> genai.Client:
-    """Create a Gemini client for this app's OWN key (separate from TrustLayer's)."""
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY is not set.")
-    return genai.Client(api_key=api_key)
+_TRANSIENT = ("503", "UNAVAILABLE", "overloaded", "high demand",
+              "429", "RESOURCE_EXHAUSTED")
+
+
+def make_clients(api_keys: list[str]) -> list[genai.Client]:
+    """Build one Gemini client per key, for fallback. Skips empty entries."""
+    clients = [genai.Client(api_key=k) for k in api_keys if k]
+    if not clients:
+        raise ValueError("No GEMINI_API_KEY set.")
+    return clients
 
 
 def _to_contents(messages: list[dict]) -> list[types.Content]:
@@ -47,23 +52,31 @@ def _to_contents(messages: list[dict]) -> list[types.Content]:
 
 
 def generate_reply(
-    client: genai.Client,
+    clients: list[genai.Client],
     messages: list[dict],
     model: str = "gemini-2.5-flash-lite",
     temperature: float = 0.7,
 ) -> str:
-    """Generate the assistant's reply given the full conversation so far.
+    """Generate the assistant's reply, trying each key in turn on failure.
 
     `messages` is a list of {role: 'user'|'assistant', content: str,
     image_bytes?: bytes, image_mime?: str}. The last item is the current turn.
+    A 503/429 on one key falls through to the next so a single overloaded or
+    exhausted key never kills the message.
     """
-    response = client.models.generate_content(
-        model=model,
-        contents=_to_contents(messages),
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
-            temperature=temperature,
-        ),
+    contents = _to_contents(messages)
+    config = types.GenerateContentConfig(
+        system_instruction=SYSTEM_PROMPT, temperature=temperature,
     )
-    text = (response.text or "").strip()
-    return text or "(no response)"
+    last_exc: Optional[Exception] = None
+    for client in clients:
+        try:
+            response = client.models.generate_content(
+                model=model, contents=contents, config=config,
+            )
+            text = (response.text or "").strip()
+            return text or "(no response)"
+        except Exception as exc:  # try the next key on any failure
+            last_exc = exc
+            continue
+    raise RuntimeError(f"All Gemini keys failed: {last_exc}")
