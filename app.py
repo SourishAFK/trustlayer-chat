@@ -20,11 +20,22 @@ from chat_engine import generate_reply, make_clients
 
 load_dotenv()
 
-GEMINI_KEYS = [os.getenv("GEMINI_API_KEY")] + [
-    os.getenv(f"GEMINI_API_KEY_{i}") for i in range(2, 10)
+
+def _secret(key: str, default=None):
+    """Read from Streamlit secrets first (cloud), then env / .env (local)."""
+    try:
+        if key in st.secrets:
+            return st.secrets[key]
+    except Exception:
+        pass
+    return os.getenv(key, default)
+
+
+GEMINI_KEYS = [_secret("GEMINI_API_KEY")] + [
+    _secret(f"GEMINI_API_KEY_{i}") for i in range(2, 10)
 ]
 GEMINI_KEYS = [k for k in GEMINI_KEYS if k]
-CHAT_MODEL = os.getenv("GEMINI_CHAT_MODEL", "gemini-2.5-flash-lite")
+CHAT_MODEL = _secret("GEMINI_CHAT_MODEL", "gemini-2.5-flash-lite")
 
 
 @st.cache_resource
