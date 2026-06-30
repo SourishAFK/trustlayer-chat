@@ -449,11 +449,11 @@ else:
                             unsafe_allow_html=True)
             else:
                 c1, c2, _sp = st.columns([1, 1, 7])
-                if c1.button("👍", key=f"up_{idx}"):
+                if c1.button("👍", key=f"fbup_{idx}"):
                     send_feedback(m["request_id"], "thumbs_up")
                     st.session_state.messages[idx]["feedback"] = "thumbs_up"
                     st.rerun()
-                if c2.button("👎", key=f"dn_{idx}"):
+                if c2.button("👎", key=f"fbdn_{idx}"):
                     send_feedback(m["request_id"], "thumbs_down")
                     st.session_state.messages[idx]["feedback"] = "thumbs_down"
                     st.rerun()
