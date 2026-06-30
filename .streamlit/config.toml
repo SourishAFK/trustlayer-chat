@@ -1,0 +1,12 @@
+[theme]
+base = "dark"
+primaryColor = "#7c5cff"
+backgroundColor = "#0b0b12"
+secondaryBackgroundColor = "#16161f"
+textColor = "#e9e9f2"
+font = "sans serif"
+
+[server]
+# Friendlier for phones on flaky mobile connections.
+enableCORS = false
+enableXsrfProtection = true
