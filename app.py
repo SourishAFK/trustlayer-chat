@@ -15,10 +15,68 @@ import re
 
 import streamlit as st
 from dotenv import load_dotenv
+from google import genai
+from google.genai import types
 
-from chat_engine import generate_reply, make_clients
+st.set_page_config(
+    page_title="TrustLayer Chat",
+    page_icon="✦",
+    layout="centered",
+    initial_sidebar_state="collapsed",
+)
 
 load_dotenv()
+
+# --------------------------------------------------------------------------- #
+# Gemini chat engine (inlined — a single-file app avoids Streamlit Cloud's
+# multi-file clone-sync bug that served a stale chat_engine.py)
+# --------------------------------------------------------------------------- #
+SYSTEM_PROMPT = (
+    "You are a warm, friendly, and helpful assistant having a natural conversation. "
+    "Answer personably and conversationally. Be concise unless the person asks for "
+    "detail. If they share an image, look at it and respond to what you see."
+)
+
+
+def make_clients(api_keys):
+    """One Gemini client per key, for fallback. Skips empty entries."""
+    clients = [genai.Client(api_key=k) for k in api_keys if k]
+    if not clients:
+        raise ValueError("No GEMINI_API_KEY set.")
+    return clients
+
+
+def _to_contents(messages):
+    contents = []
+    for m in messages:
+        role = "user" if m.get("role") == "user" else "model"
+        parts = []
+        if m.get("content"):
+            parts.append(types.Part.from_text(text=m["content"]))
+        if m.get("image_bytes"):
+            parts.append(types.Part.from_bytes(
+                data=m["image_bytes"], mime_type=m.get("image_mime") or "image/jpeg"))
+        if parts:
+            contents.append(types.Content(role=role, parts=parts))
+    return contents
+
+
+def generate_reply(clients, messages, model="gemini-2.5-flash-lite", temperature=0.7):
+    """Generate the reply, trying each key in turn so one 503/429 doesn't kill it."""
+    contents = _to_contents(messages)
+    config = types.GenerateContentConfig(
+        system_instruction=SYSTEM_PROMPT, temperature=temperature)
+    last_exc = None
+    for client in clients:
+        try:
+            response = client.models.generate_content(
+                model=model, contents=contents, config=config)
+            text = (response.text or "").strip()
+            return text or "(no response)"
+        except Exception as exc:
+            last_exc = exc
+            continue
+    raise RuntimeError(f"All Gemini keys failed: {last_exc}")
 
 
 def _secret(key: str, default=None):
@@ -42,12 +100,6 @@ CHAT_MODEL = _secret("GEMINI_CHAT_MODEL", "gemini-2.5-flash-lite")
 def get_clients():
     return make_clients(GEMINI_KEYS)
 
-st.set_page_config(
-    page_title="TrustLayer Chat",
-    page_icon="✦",
-    layout="centered",
-    initial_sidebar_state="collapsed",
-)
 
 # --------------------------------------------------------------------------- #
 # Premium styling
